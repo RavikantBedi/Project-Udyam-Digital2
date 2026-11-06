@@ -23,10 +23,16 @@ services:
       - ./backend:/app
       - ./data:/data
       - ./backend/uploads:/app/uploads
-    env_file:
-      - .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://accel:accel@postgres:5432/accel
+      - APP_ENV=dev
+      - DATABASE_URL=postgresql+psycopg2://accel:accel@postgres:5432/accel
+      - DEMO_TODAY=2026-07-15
+      - DATA_DIR=/data
+      - UPLOAD_DIR=/app/uploads
+      - JWT_SECRET=dev-only-change-me-in-production
+      - APP_ENCRYPTION_KEY=dev-only-change-me-in-production
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+      - LLM_PROVIDER=offline
     depends_on:
       postgres:
         condition: service_healthy

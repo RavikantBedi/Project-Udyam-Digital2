@@ -48,6 +48,7 @@ class Order(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     order_id: str = Field(index=True, unique=True)
     lead_id: str = ""
+    user_id: str = Field(default="", index=True, description="owner user who created the order")
     business_name: str
     phone: str = ""
     status: str = "Order placed"

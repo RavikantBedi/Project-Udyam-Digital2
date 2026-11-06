@@ -111,6 +111,28 @@ async def rate_limit_and_request_id(request: Request, call_next):
     rid = get_request_id(request)
     ip = request.client.host if request.client else "unknown"
 
+    # CSRF protection for state-changing, cookie-authenticated requests.
+    # The presence of the access_token cookie marks a cookie-authenticated
+    # session; signin/signup/otp never carry it yet, so they are naturally exempt.
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.cookies.get(
+        "access_token"
+    ):
+        csrf_token = request.headers.get("x-csrf-token", "")
+        cookie_csrf = request.cookies.get("csrf_token", "")
+        if not cookie_csrf or not csrf_token or cookie_csrf != csrf_token:
+            logger.info(
+                "csrf_failed",
+                extra={"request_id": rid, "ip": ip, "path": request.url.path},
+            )
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "CSRF token mismatch",
+                    "status_code": 403,
+                    "request_id": rid,
+                },
+            )
+
     # Rate limiting
     for path_prefix, (max_calls, window) in RATE_LIMITS.items():
         if request.url.path.startswith(path_prefix):

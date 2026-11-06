@@ -53,7 +53,8 @@ export default function Advisor() {
     try {
       const res = await fetch(`${API_URL}/api/advisor/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': (document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '') },
         body: JSON.stringify({
           message: userMsg,
           profile: { ...profile, lang: i18n.language },

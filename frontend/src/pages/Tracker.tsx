@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   CheckCircle2,
@@ -19,6 +19,7 @@ const API_URL = window.location.protocol + '//' + window.location.hostname + ':8
 export default function Tracker() {
   const { i18n } = useTranslation()
   const location = useLocation()
+  const navigate = useNavigate()
   const isHi = i18n.language === 'hi'
 
   const orderId = location.state?.order_id || 'ORD-DEMO0001'
@@ -29,7 +30,8 @@ export default function Tracker() {
 
   const fetchTrack = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/orders/${orderId}/track`)
+      const res = await fetch(`${API_URL}/api/orders/${orderId}/track`, { credentials: 'include' })
+      if (res.status === 401) { navigate('/auth'); return }
       const data = await res.json()
       setTrackData(data)
     } catch (e) {
@@ -39,7 +41,7 @@ export default function Tracker() {
 
   const fetchLiveNotifications = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/notifications/live?limit=20`)
+      const res = await fetch(`${API_URL}/api/notifications/live?limit=20`, { credentials: 'include' })
       const data = await res.json()
       if (Array.isArray(data)) {
         setLiveLogs(data)
@@ -65,7 +67,8 @@ export default function Tracker() {
     try {
       await fetch(`${API_URL}/api/demo/advance-time`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': (document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '') },
         body: JSON.stringify({ order_id: orderId }),
       })
       fetchTrack()

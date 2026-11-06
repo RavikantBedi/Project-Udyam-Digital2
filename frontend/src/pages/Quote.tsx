@@ -25,6 +25,7 @@ export default function Quote() {
     try {
       const res = await fetch(`${API_URL}/api/quote`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bundle, contract_months: months }),
       })

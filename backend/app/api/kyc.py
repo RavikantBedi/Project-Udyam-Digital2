@@ -6,7 +6,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlmodel import Session
 
+from app.core.config import get_settings
 from app.core.db import engine, get_session
+from app.models.models import User
 from app.schemas.schemas import (
     ConsentReq,
     ConsentResp,
@@ -16,6 +18,7 @@ from app.schemas.schemas import (
     KYCUploadResp,
     UdyamLookupResp,
 )
+from app.security.auth import get_current_user
 from app.services.ocr import (  # noqa: F401 — re-exported for test compatibility
     mask_gstin,
     validate_gstin_checksum,
@@ -23,13 +26,24 @@ from app.services.ocr import (  # noqa: F401 — re-exported for test compatibil
 )
 from app.services.services import KYCService
 
+settings = get_settings()
+
 router = APIRouter(prefix="/kyc", tags=["kyc"])
+
+# Upload policy
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+ALLOWED_MAGIC = {
+    b"\x89PNG\r\n\x1a\n": ".png",   # PNG
+    b"\xff\xd8\xff": ".jpg",        # JPEG
+    b"%PDF": ".pdf",                # PDF
+}
 
 
 @router.post("/consent", response_model=ConsentResp, status_code=status.HTTP_201_CREATED)
 def record_consent(
     req: ConsentReq,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     service = KYCService(session)
     ledger = service.record_consent(
@@ -62,12 +76,24 @@ def lookup_udyam(number: str, session: Session = Depends(get_session)):
 
 
 @router.post("/upload", response_model=KYCUploadResp)
-async def kyc_upload(file: UploadFile = File(...)):
+async def kyc_upload(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
     upload_dir = "./uploads"
     os.makedirs(upload_dir, exist_ok=True)
-    fname = f"{uuid.uuid4().hex}_{file.filename}"
-    path = os.path.join(upload_dir, fname)
     content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large")
+    ext = None
+    for magic, suffix in ALLOWED_MAGIC.items():
+        if content.startswith(magic):
+            ext = suffix
+            break
+    if ext is None:
+        raise HTTPException(status_code=415, detail="Unsupported file type — PNG/JPEG/PDF only")
+    fname = f"{uuid.uuid4().hex}{ext}"
+    path = os.path.join(upload_dir, fname)
     with open(path, "wb") as f:
         f.write(content)
     return KYCUploadResp(filename=fname, status="uploaded", size=len(content))
@@ -77,6 +103,7 @@ async def kyc_upload(file: UploadFile = File(...)):
 def kyc_validate(
     req: Any,
     session: Session | None = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     if session is None:
         session = Session(engine)
@@ -86,12 +113,12 @@ def kyc_validate(
 
 
 @router.post("/esign/otp", response_model=ESIGNOTPResp)
-def esign_otp():
+def esign_otp(current_user: User = Depends(get_current_user)):
     return ESIGNOTPResp(status="sent", demo_otp="123456", note="Simulated for demo — use OTP 123456")
 
 
 @router.post("/esign/verify", response_model=ESIGNVerifyResp)
-def esign_verify(otp: str):
+def esign_verify(otp: str, current_user: User = Depends(get_current_user)):
     if str(otp).strip() != "123456":
         raise HTTPException(status_code=400, detail="Invalid OTP")
     return ESIGNVerifyResp(status="verified")

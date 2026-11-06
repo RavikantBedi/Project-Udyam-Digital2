@@ -72,6 +72,8 @@ class MessageResp(BaseModel):
     all_slots_filled: bool = False
     mode: str
     action: str | None = None
+    provider: str = "offline"
+    fallback: bool = False
 
 
 class BundleRecommendReq(BaseModel):
@@ -194,10 +196,13 @@ class OrderCreateReq(BaseModel):
 
 
 class OrderResp(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     order_id: str
     business_name: str
     phone: str
     status: str
+    user_id: str | None = None
     bundle_json: str
     monthly_total: float
     one_time_total: float

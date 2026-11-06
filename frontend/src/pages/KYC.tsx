@@ -30,6 +30,7 @@ export default function KYC() {
   const [lookupData, setLookupData] = useState<any>(null)
   const [lookupError, setLookupError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [digilockerLoading, setDigilockerLoading] = useState(false)
 
   // Validation results
   const [checks, setChecks] = useState<any[]>([])
@@ -44,7 +45,8 @@ export default function KYC() {
     try {
       await fetch(`${API_URL}/api/consent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': (document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '') },
         body: JSON.stringify({
           order_id: 'ORD-TEMP',
           consent_given: consentGiven,
@@ -73,7 +75,7 @@ export default function KYC() {
     setLoading(true)
     setLookupError('')
     try {
-      const res = await fetch(`${API_URL}/api/lookup/gstin/${gstinInput.trim().toUpperCase()}`)
+      const res = await fetch(`${API_URL}/api/lookup/gstin/${gstinInput.trim().toUpperCase()}`, { credentials: 'include' })
       const data = await res.json()
       setLoading(false)
 
@@ -105,6 +107,7 @@ export default function KYC() {
       // Simulate validation against data
       const res = await fetch(`${API_URL}/api/kyc/validate`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           gstin: gstinInput || lookupData?.gstin || '27AAECP1234F1ZX',
@@ -139,7 +142,8 @@ export default function KYC() {
     try {
       const res = await fetch(`${API_URL}/api/orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': (document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '') },
         body: JSON.stringify({
           business_name: lookupData?.trade_name || lookupData?.legal_name || 'My Small Business',
           phone: '9876543210',
@@ -360,11 +364,32 @@ export default function KYC() {
               {isHi ? 'आधार प्रमाणीकरण द्वारा सरकारी दस्तावेज़ तुरंत लाएँ' : 'Direct certified fetch from DigiLocker (Simulated for demo)'}
             </p>
             <button
-              onClick={() => runValidation('K02')}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-xs"
+              onClick={(e) => {
+                e.preventDefault()
+                setDigilockerLoading(true)
+                setTimeout(() => {
+                  setDigilockerLoading(false)
+                  runValidation('K02')
+                }, 800)
+              }}
+              disabled={digilockerLoading}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-60"
             >
-              {isHi ? 'डिजीलॉकर से लाएं (K02 - पास)' : 'Pull via DigiLocker (K02 - Pass)'}
+              {digilockerLoading ? (
+                <>
+                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>डिजीलॉकर से ला रहे हैं...</span>
+                </>
+              ) : (
+                <>
+                  <Lock size={14} />
+                  <span>{isHi ? 'डिजीलॉकर से लाएं (K02 - पास)' : 'Pull via DigiLocker (K02 - Pass)'}</span>
+                </>
+              )}
             </button>
+            <p className="text-[10px] text-blue-600 font-medium mt-1">
+              {isHi ? 'डेमो हेतु सिम्युलेटेड ऑटो-फेच' : 'Simulated auto-fetch for demo'}
+            </p>
           </div>
 
           <div className="relative text-center">

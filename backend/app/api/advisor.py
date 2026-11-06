@@ -320,6 +320,61 @@ def _build_final_reply(
     )
 
 
+# Profile slots that must be filled before the rules engine is consulted.
+REQUIRED_SLOTS = [
+    "business_type",
+    "employee_count",
+    "num_sites",
+    "city",
+    "products_of_interest",
+    "has_gstin",
+]
+
+
+def _extract_profile(response, req_message: str, profile: dict, lang: str) -> dict:
+    """Merge slots extracted from the LLM response.
+
+    Real provider: prefer LLM tool calls, then structured JSON in the text.
+    Offline provider / failure: deterministic keyword slot-filling.
+    """
+    new_profile = dict(profile)
+    new_profile["lang"] = lang
+
+    tool_calls = getattr(response, "tool_calls", None) or []
+    merged = False
+    for call in tool_calls:
+        args = call.get("arguments") if isinstance(call, dict) else getattr(call, "arguments", None)
+        if isinstance(args, str):
+            try:
+                parsed = json.loads(args)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                new_profile.update(parsed)
+                merged = True
+        elif isinstance(args, dict):
+            new_profile.update(args)
+            merged = True
+
+    if not merged:
+        text = getattr(response, "text", "") or ""
+        try:
+            start = text.index("{")
+            end = text.rindex("}") + 1
+            parsed = json.loads(text[start:end])
+            if isinstance(parsed, dict):
+                new_profile.update(parsed)
+                merged = True
+        except (ValueError, json.JSONDecodeError):
+            pass
+
+    if not merged:
+        # Offline provider's deterministic slot-filling.
+        new_profile = extract_slot(req_message, new_profile)
+        new_profile["lang"] = lang
+    return new_profile
+
+
 @router.post("/message", response_model=MessageResp)
 async def advisor_message(
     req: MessageReq,
@@ -343,47 +398,77 @@ async def advisor_message(
             all_slots_filled=False,
             mode="offline",
             action="handoff",
+            provider=getattr(manager, "active_provider", "offline") or "offline",
+            fallback=True,
         )
 
-    # Use LLM to extract/update profile from conversation
+    # Build messages for the LLM
     messages = _profile_to_messages(profile, lang)
     messages.append({"role": "user", "content": req.message})
 
     engine = RulesEngine(session)
 
+    # Use LLM to extract/update profile from every user message.
+    provider_name = "offline"
+    is_offline = True
+    new_profile = dict(profile)
+    new_profile["lang"] = lang
+
     try:
-        await manager.chat(messages, redact_pii=True)
-        # Try to extract updated profile from LLM response text or tool calls
-        # The offline provider handles slot-filling deterministically
-        new_profile = dict(profile)
-        new_profile["lang"] = lang
-
-        # Check if all slots filled → recommend bundle
-        rec = engine.recommend_bundle(new_profile)
-        pricing = engine.price_bundle(rec["bundle"])
-
-        why = []
-        btype = new_profile.get("business_type", "")
-        if btype:
-            why.append(f"Tailored for {btype} businesses")
-        emp = new_profile.get("employee_count", 0)
-        if emp:
-            why.append(f"Covers your team of {emp} employees")
-        if new_profile.get("has_gstin") == "Y":
-            why.append("Includes advanced services available with GSTIN")
-        elif new_profile.get("has_gstin") == "N":
-            why.append("GST-free bundle — no GSTIN required")
-        rec["why"] = why
-
-        return _build_final_reply(new_profile, rec, pricing, lang)
-
+        response = await manager.chat(messages, redact_pii=True)
+        provider_name = getattr(response, "provider", "offline") or "offline"
+        is_offline = provider_name == "offline"
+        new_profile = _extract_profile(response, req.message, new_profile, lang)
     except Exception as err:
         logger.error("Advisor LLM error: %s", err)
-        # Fallback to deterministic offline
-        engine = RulesEngine(session)
-        rec = engine.recommend_bundle(profile)
-        pricing = engine.price_bundle(rec["bundle"])
-        return _build_final_reply(profile, rec, pricing, lang)
+        provider_name = "offline"
+        is_offline = True
+        new_profile = extract_slot(req.message, new_profile)
+        new_profile["lang"] = lang
+
+    # Never return a bundle for an empty profile: if any required slot is still
+    # missing, ask the next missing question with quick replies.
+    missing = [s for s in REQUIRED_SLOTS if not new_profile.get(s)]
+    if missing:
+        next_q, quick_replies = next_question(new_profile, lang)
+        reply = next_q or build_reply({}, {}, lang, "")
+        return MessageResp(
+            reply=reply,
+            profile=new_profile,
+            recommendation=None,
+            pricing=None,
+            quick_replies=quick_replies,
+            all_slots_filled=False,
+            mode="offline" if is_offline else provider_name,
+            provider=provider_name,
+            fallback=is_offline,
+        )
+
+    # All slots filled → call the rules engine.
+    rec = engine.recommend_bundle(new_profile)
+    pricing = engine.price_bundle(rec["bundle"])
+
+    why = []
+    btype = new_profile.get("business_type", "")
+    if btype:
+        why.append(f"Tailored for {btype} businesses")
+    emp = new_profile.get("employee_count", 0)
+    if emp:
+        why.append(f"Covers your team of {emp} employees")
+    if new_profile.get("has_gstin") == "Y":
+        why.append("Includes advanced services available with GSTIN")
+    elif new_profile.get("has_gstin") == "N":
+        why.append("GST-free bundle — no GSTIN required")
+    rec["why"] = why
+
+    reply = _build_final_reply(new_profile, rec, pricing, lang)
+    return reply.model_copy(
+        update={
+            "provider": provider_name,
+            "fallback": is_offline,
+            "mode": "offline" if is_offline else provider_name,
+        }
+    )
 
 
 @router.post("/bundle/recommend", response_model=BundleRecommendResp)

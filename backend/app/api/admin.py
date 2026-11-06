@@ -11,7 +11,7 @@ from app.schemas.schemas import (
     LeadAssignmentResp,
     LeadResp,
 )
-from app.security.auth import get_current_user, require_role
+from app.security.auth import require_role
 from app.services.admin_service import AdminService
 
 router = APIRouter(tags=["admin"])
@@ -21,7 +21,7 @@ router = APIRouter(tags=["admin"])
 def admin_leads(
     request: Request,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(["admin", "sales", "partner"])),
 ):
     service = AdminService(session)
     leads = service.list_leads(
@@ -82,7 +82,7 @@ def admin_assign_lead(
     req: LeadAssignmentCreateReq,
     request: Request,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(["admin", "sales"])),
 ):
     service = AdminService(session)
     try:
@@ -111,7 +111,7 @@ def admin_update_assignment_outcome(
     req: LeadAssignmentOutcomeReq,
     request: Request,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(["admin", "sales", "partner"])),
 ):
     service = AdminService(session)
     try:

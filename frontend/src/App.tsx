@@ -1,4 +1,4 @@
-import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect } from 'react'
 import Home from './pages/Home'
@@ -8,6 +8,7 @@ import KYC from './pages/KYC'
 import Tracker from './pages/Tracker'
 import Office from './pages/Office'
 import Auth from './pages/Auth'
+import { apiRequest } from './lib/api'
 
 const STEP_MAP: Record<string, number> = {
   '/advisor': 1,
@@ -51,25 +52,39 @@ function ProgressStepper() {
   )
 }
 
+function Protected({ children }: { children: React.ReactNode }) {
+  const [authed, setAuthed] = useState<boolean | null>(null)
+  useEffect(() => {
+    apiRequest('/api/auth/me').then((r) => setAuthed(r.ok)).catch(() => setAuthed(false))
+  }, [])
+  if (authed === null) return null
+  if (!authed) return <Navigate to="/auth" replace />
+  return <>{children}</>
+}
 export default function App() {
   const { i18n } = useTranslation()
   const isHi = i18n.language === 'hi'
   const [currentUser, setCurrentUser] = useState<any>(null)
 
   useEffect(() => {
-    const raw = localStorage.getItem('auth_user')
-    if (raw) {
-      try {
-        setCurrentUser(JSON.parse(raw))
-      } catch (e) {
-        console.error(e)
-      }
-    }
+    apiRequest('/api/auth/me')
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json()
+          setCurrentUser(data)
+        } else {
+          setCurrentUser(null)
+        }
+      })
+      .catch(() => setCurrentUser(null))
   }, [])
 
-  const logout = () => {
-    localStorage.removeItem('auth_token')
-    localStorage.removeItem('auth_user')
+  const logout = async () => {
+    try {
+      await apiRequest('/api/auth/signout', { method: 'POST', body: JSON.stringify({ refresh_token: '' }) })
+    } catch {
+      // ignore
+    }
     setCurrentUser(null)
   }
 
@@ -137,11 +152,11 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/auth" element={<Auth />} />
-          <Route path="/advisor" element={<Advisor />} />
-          <Route path="/quote" element={<Quote />} />
-          <Route path="/kyc" element={<KYC />} />
-          <Route path="/track" element={<Tracker />} />
-          <Route path="/office" element={<Office />} />
+          <Route path="/advisor" element={<Protected><Advisor /></Protected>} />
+          <Route path="/quote" element={<Protected><Quote /></Protected>} />
+          <Route path="/kyc" element={<Protected><KYC /></Protected>} />
+          <Route path="/track" element={<Protected><Tracker /></Protected>} />
+          <Route path="/office" element={<Protected><Office /></Protected>} />
         </Routes>
       </main>
 

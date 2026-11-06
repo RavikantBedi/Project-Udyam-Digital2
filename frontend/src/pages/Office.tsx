@@ -25,7 +25,7 @@ export default function Office() {
   const { data: leads, isLoading: leadsLoading } = useQuery({
     queryKey: ['officeLeads'],
     queryFn: async () => {
-      const res = await fetch(`${API_URL}/api/office/leads`)
+      const res = await fetch(`${API_URL}/api/office/leads`, { credentials: 'include' })
       return res.json()
     },
   })
@@ -34,7 +34,7 @@ export default function Office() {
   const { data: metrics } = useQuery({
     queryKey: ['officeMetrics'],
     queryFn: async () => {
-      const res = await fetch(`${API_URL}/api/office/metrics`)
+      const res = await fetch(`${API_URL}/api/office/metrics`, { credentials: 'include' })
       return res.json()
     },
   })
@@ -42,7 +42,11 @@ export default function Office() {
   // Retrain model mutation
   const retrainMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${API_URL}/api/office/model/retrain`, { method: 'POST' })
+      const res = await fetch(`${API_URL}/api/office/model/retrain`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': (document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '') },
+      })
       return res.json()
     },
     onSuccess: (data) => {
@@ -55,7 +59,8 @@ export default function Office() {
     try {
       await fetch(`${API_URL}/api/office/leads/${leadId}/assign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': (document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '') },
         body: JSON.stringify({ assignee, type }),
       })
       setAssignedStatus((prev) => ({

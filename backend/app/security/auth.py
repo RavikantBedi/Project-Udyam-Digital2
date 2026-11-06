@@ -16,7 +16,7 @@ from app.schemas.schemas import TokenResponse, UserResponse
 settings = get_settings()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/signin")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/signin", auto_error=False)
 
 
 def hash_password(password: str) -> str:
@@ -98,9 +98,21 @@ def verify_csrf_token(request: Request, csrf_token: str | None = None) -> None:
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
     session: Session = Depends(get_session),
 ) -> User:
+    """Resolve the current user from the access_token cookie or Bearer header."""
+    token = request.cookies.get("access_token")
+    if not token:
+        authorization = request.headers.get("authorization", "")
+        if authorization.startswith("Bearer "):
+            token = authorization[len("Bearer "):]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     payload = decode_token(token, expected_type="access")
     user_id: str | None = payload.get("sub")
     if user_id is None:
