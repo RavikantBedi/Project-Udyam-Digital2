@@ -62,14 +62,32 @@ def get_request_id(request: Request) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Rate limiting middleware (in-memory, per-IP)
+# Rate limiting middleware (per-route-group + per-IP)
 # ---------------------------------------------------------------------------
-_rate_limits: dict[str, deque] = defaultdict(deque)
+_rate_limits: dict[str, deque] = defaultdict(deque)  # key: "group:ip"
 
 
-def _rate_limited(ip: str, max_calls: int, window_seconds: int = 60) -> bool:
+def _rate_key(path: str, ip: str) -> str:
+    """Generate rate limit key from route group and IP."""
+    path = path.lstrip("/")
+    if path.startswith("api/auth/signin") or path.startswith("/api/auth/signin"):
+        return "auth:signin"
+    if path.startswith("api/auth/signup") or path.startswith("/api/auth/signup"):
+        return "auth:signup"
+    if path.startswith("api/auth/otp") or path.startswith("/api/auth/otp"):
+        return "auth:otp"
+    if path.startswith("api/advisor/message") or path.startswith("/api/advisor/message"):
+        return "advisor"
+    if path.startswith("api/lookup/") or path.startswith("/api/lookup/"):
+        return "lookup"
+    # Default: per-route key
+    return f"route:{path}"
+
+
+def _rate_limited(ip: str, path: str, max_calls: int, window_seconds: int = 60) -> bool:
     now = time.time()
-    window = _rate_limits[ip]
+    key = _rate_key(path, ip)
+    window = _rate_limits[key]
     while window and window[0] < now - window_seconds:
         window.popleft()
     if len(window) >= max_calls:

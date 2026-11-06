@@ -509,3 +509,14 @@ class AIHealthResp(BaseModel):
 # Fix forward references
 TokenResp.model_rebuild()
 
+
+class ProfileUpdate(BaseModel):
+    """Allow-listed profile update schema for advisor LLM responses."""
+    business_type: str | None = None
+    employee_count: int | None = None
+    num_sites: int | None = None
+    city: str | None = None
+    products_of_interest: list[str] | None = None
+    has_gstin: str | None = None  # 'Y' or 'N'
+
+    model_config = ConfigDict(from_attributes=True)
