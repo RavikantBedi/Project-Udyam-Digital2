@@ -69,7 +69,7 @@ _rate_limits: dict[str, deque] = defaultdict(deque)  # key: "group:ip"
 
 def _rate_key(path: str, ip: str) -> str:
     """Generate rate limit key from route group and IP."""
-    path = path.lstrip("/")
+    path = str(path).lstrip("/")
     if path.startswith("api/auth/signin") or path.startswith("/api/auth/signin"):
         return "auth:signin"
     if path.startswith("api/auth/signup") or path.startswith("/api/auth/signup"):
